@@ -254,85 +254,23 @@ export default function App() {
     return () => el.removeEventListener('wheel', onWheel);
   }, [active, ready]);
 
-  // ===== Touch swipe (mobile) – perbaikan agar terasa lebih natural =====
+  // ===== Mobile natural snap assist (sederhana anti-glitch) =====
   useEffect(() => {
-    if (!ready) return;
-    const el = containerRef.current;
-    if (!el) return;
-    let startY = 0, lastY = 0, startTime = 0;
-    let maxAbsDelta = 0;
-    let scrolling = false; // user sedang drag konten
-    let handled = false;
-    const cooldown = 320; // lebih responsif
-    let lastTrigger = 0;
-
+    if (!ready) return; const el = containerRef.current; if (!el) return;
+    const isCoarse = window.matchMedia('(pointer:coarse)').matches; if (!isCoarse) return;
+    let idleTimer: number | null = null;
+    const IDLE_DELAY = 120; // ms setelah momentum berhenti
     const snapToNearest = () => {
-      const container = containerRef.current; if (!container) return;
-      const mid = container.scrollTop + container.clientHeight / 2;
-      let best = 0; let bestDist = Infinity;
-      sectionRefs.current.forEach((el, i) => {
-        if (!el) return; const center = el.offsetTop + el.offsetHeight / 2;
-        const d = Math.abs(center - mid); if (d < bestDist) { bestDist = d; best = i; }
-      });
-      scrollToIndex(best, { overshoot: false });
+      if (isAnimatingRef.current) return; const container = containerRef.current; if (!container) return;
+      const scrollTop = container.scrollTop; let best = 0; let bestDist = Infinity;
+      sectionRefs.current.forEach((sec, i) => { if (!sec) return; const d = Math.abs(sec.offsetTop - scrollTop); if (d < bestDist) { bestDist = d; best = i; } });
+      const target = sectionRefs.current[best]; if (!target) return; const diff = Math.abs(target.offsetTop - scrollTop); if (diff < 14) return;
+      // Gunakan native smooth agar tidak jitter (tanpa overshoot)
+      container.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
     };
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (isAnimatingRef.current) return;
-      if (e.touches.length !== 1) return;
-      startY = lastY = e.touches[0].clientY;
-      startTime = performance.now();
-      maxAbsDelta = 0;
-      scrolling = false;
-      handled = false;
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      const y = e.touches[0].clientY;
-  lastY = y;
-      const totalDelta = y - startY;
-      maxAbsDelta = Math.max(maxAbsDelta, Math.abs(totalDelta));
-      if (Math.abs(totalDelta) > 8) scrolling = true;
-      // Biarkan native scroll berjalan — tidak preventDefault di sini (smooth *feel*)
-    };
-    const onTouchEnd = (e: TouchEvent) => {
-      if (handled) return;
-      if (!scrolling) return; // tap
-      const now = performance.now();
-      const deltaY = lastY - startY; // positif => swipe turun
-      const abs = Math.abs(deltaY);
-      const dur = now - startTime;
-      const velocity = abs / Math.max(dur, 1); // px per ms
-      const isFlick = velocity > 0.9 || (dur < 180 && abs > 50);
-      const distanceOk = abs > (isFlick ? 28 : 95); // adaptif
-      if (!distanceOk) {
-        // kecil: snap ke section terdekat setelah jeda singkat agar bounce native selesai
-        setTimeout(() => snapToNearest(), 40);
-        return;
-      }
-      if (now - lastTrigger < cooldown) { setTimeout(() => snapToNearest(), 80); return; }
-      lastTrigger = now; handled = true;
-      let next = active + (deltaY < 0 ? 1 : -1);
-      if (next < 0) next = 0; else if (next >= SECTIONS.length) next = SECTIONS.length - 1;
-      if (next !== active) {
-        // cegah "double scroll" (native + programatik) saat flick kuat
-        e.preventDefault();
-        scrollToIndex(next, { overshoot: false });
-      } else {
-        setTimeout(() => snapToNearest(), 40);
-      }
-    };
-
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: true });
-    el.addEventListener('touchend', onTouchEnd, { passive: false });
-    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
-    return () => {
-      el.removeEventListener('touchstart', onTouchStart as any);
-      el.removeEventListener('touchmove', onTouchMove as any);
-      el.removeEventListener('touchend', onTouchEnd as any);
-      el.removeEventListener('touchcancel', onTouchEnd as any);
-    };
+    const onScroll = () => { if (idleTimer) clearTimeout(idleTimer); idleTimer = window.setTimeout(snapToNearest, IDLE_DELAY); };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => { el.removeEventListener('scroll', onScroll); if (idleTimer) clearTimeout(idleTimer); };
   }, [active, ready]);
 
   if (!ready) {
