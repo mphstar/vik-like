@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/museums", "destination": "/index.html" },
+    { "source": "/museum/:path*", "destination": "/index.html" },
+    { "source": "/:path*", "has": [ { "type": "host", "value": ".*" } ], "destination": "/index.html" }
+  ]
+}
