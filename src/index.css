@@ -1,0 +1,42 @@
+@import "tailwindcss";
+/* Removed icomoon font import (no longer used) */
+
+/* Scroll-snap container */
+.snap-y-mandatory {
+  scroll-snap-type: y mandatory;
+}
+
+/* iOS momentum + cegah "tarik refresh" efek */
+html, body, #root {
+  height: 100%;
+  overscroll-behavior-y: none;
+  font-family: 'Freeman', system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-feature-settings: "liga" 1, "kern" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Smooth scroll untuk nav dots */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbar (opsional) */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
