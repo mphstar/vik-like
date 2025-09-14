@@ -1,6 +1,9 @@
 import { useRef, useState, useLayoutEffect } from 'react'
 import '@photo-sphere-viewer/core/index.css'
 import { Viewer } from '@photo-sphere-viewer/core'
+import { useParams } from 'react-router-dom'
+import { MUSEUMS } from '../MuseumData'
+import { Header } from '../../components/templates'
 
 // Item type for explanations
 type ExplanationItem = {
@@ -10,7 +13,7 @@ type ExplanationItem = {
 }
 
 const PANORAMA_URL =
-  'https://raw.githubusercontent.com/jariq/KUK360/refs/heads/main/img/KUK360-Photo-Sample.jpg' // sample equirectangular image
+  'https://raw.githubusercontent.com/jariq/KUK360/refs/heads/main/img/KUK360-Photo-Sample.jpg' // default sample
 const FALLBACK_PANORAMA_URL =
   'https://raw.githubusercontent.com/jariq/KUK360/refs/heads/main/img/KUK360-Photo-Sample.jpg'
 
@@ -39,7 +42,8 @@ const MobileBottomSheet = ({
   const [snap, setSnap] = useState<'closed' | 'half' | 'full'>('closed')
   const [dragTop, setDragTop] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
-  const startRef = useRef<{ y: number; top: number } | null>(null)
+  const startRef = useRef<{ y: number; top: number; eligible: boolean; inScrollable: HTMLElement | null } | null>(null)
+  const velRef = useRef<Array<{ t: number; y: number }>>([])
 
   useLayoutEffect(() => {
     const onResize = () => {
@@ -64,27 +68,91 @@ const MobileBottomSheet = ({
 
   const currentTop = dragTop ?? topForSnap(snap)
 
+  const getScrollableAncestor = (el: HTMLElement | null): HTMLElement | null => {
+    let cur: HTMLElement | null = el
+    while (cur) {
+      if (cur.hasAttribute('data-scrollable')) return cur
+      cur = cur.parentElement
+    }
+    return null
+  }
+
   const onPointerDown = (e: React.PointerEvent) => {
-    setDragging(true)
+    // Do not immediately capture; wait until movement threshold & eligibility
     const startTop = currentTop
-    startRef.current = { y: e.clientY, top: startTop }
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    const target = e.target as HTMLElement | null
+    const scrollable = getScrollableAncestor(target)
+    startRef.current = { y: e.clientY, top: startTop, eligible: false, inScrollable: scrollable }
+    velRef.current = [{ t: performance.now(), y: e.clientY }]
+    // Visual feedback
+    setDragging(false)
   }
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragging || !startRef.current) return
-    const dy = e.clientY - startRef.current.y
-    const nextTop = clampTop(startRef.current.top + dy)
+    if (!startRef.current) return
+    const s = startRef.current
+    const dy = e.clientY - s.y
+    const abs = Math.abs(dy)
+    const now = performance.now()
+    // keep velocity samples
+    velRef.current.push({ t: now, y: e.clientY })
+    if (velRef.current.length > 6) velRef.current.shift()
+
+    // Decide eligibility once threshold passed
+    if (!dragging) {
+      if (abs < 6) return
+      let eligible = true
+      // If started inside scrollable content, allow drag only when at edges
+      if (s.inScrollable) {
+        const sc = s.inScrollable
+        const atTop = sc.scrollTop <= 0
+        const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 1
+        if (dy > 0 && !atTop) eligible = false // pulling down but content can scroll up
+        if (dy < 0 && !atBottom) eligible = false // pulling up but content can scroll down
+      }
+      if (!eligible) {
+        // let native scroll happen
+        startRef.current = null
+        return
+      }
+      // start dragging
+      setDragging(true)
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      // Prevent text selection while dragging
+      const b = document.body as HTMLBodyElement
+      b.style.userSelect = 'none'
+      s.eligible = true
+    }
+
+    // Active drag
+    const nextTop = clampTop(s.top + dy)
     setDragTop(nextTop)
   }
-  const finishDrag = () => {
+  const finishDrag = (e?: React.PointerEvent) => {
+    startRef.current = null
+    const b = document.body as HTMLBodyElement
+    b.style.userSelect = ''
     if (!dragging) return
     setDragging(false)
-    if (dragTop == null) return setDragTop(null)
+    if (e) try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch {}
+
+    if (dragTop == null) { setDragTop(null); return }
+    // Compute velocity px/ms from last samples
+    const samples = velRef.current
+    let velocity = 0
+    if (samples.length >= 2) {
+      const a = samples[0], z = samples[samples.length - 1]
+      const dt = Math.max(1, z.t - a.t)
+      velocity = (z.y - a.y) / dt // +down, -up
+    }
+    const v = velocity // px/ms
     const visible = vh - dragTop
     const ratio = vh > 0 ? visible / vh : 0
+    // Velocity-aware snapping
     let next: typeof snap
-    if (ratio > 0.85) next = 'full'
-    else if (ratio > 0.35) next = 'half'
+    if (v < -0.6) next = 'full' // fast swipe up
+    else if (v > 0.6) next = 'closed' // fast swipe down
+    else if (ratio > 0.8) next = 'full'
+    else if (ratio > 0.4) next = 'half'
     else next = 'closed'
     setSnap(next)
     setDragTop(null)
@@ -92,28 +160,25 @@ const MobileBottomSheet = ({
 
   const openHalf = () => setSnap('half')
   const close = () => setSnap('closed')
-  const toFull = () => setSnap('full')
 
   const isOpen = snap !== 'closed'
 
   return (
     <div
       className={[
-        'fixed inset-x-0 bottom-0 z-40 transition-[top] ease-out',
-        dragging ? 'duration-0' : 'duration-300',
+        'fixed inset-x-0 bottom-0 z-[80] transition-[top] ease-out select-none',
+        dragging ? 'duration-0 cursor-grabbing' : 'duration-300 cursor-grab',
       ].join(' ')}
-      style={{ top: `${currentTop}px` }}
+      style={{ top: `${currentTop}px`, touchAction: 'none' as any }}
       aria-hidden={!isOpen}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={finishDrag}
+      onPointerCancel={finishDrag}
     >
       <div className="absolute inset-0 rounded-t-2xl bg-white/90 backdrop-blur dark:bg-neutral-900/90 shadow-2xl border-t border-neutral-200/60 dark:border-neutral-800 text-neutral-700 dark:text-neutral-200">
         {/* Handle & actions */}
-        <div
-          className="flex items-center gap-2 px-4 pt-2"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={finishDrag}
-          onPointerCancel={finishDrag}
-        >
+        <div className="flex items-center gap-2 px-4 pt-2">
           <div className="mx-auto h-1.5 w-12 rounded-full bg-neutral-400/70" />
         </div>
         <div className="flex items-center justify-between px-4 py-2">
@@ -124,18 +189,18 @@ const MobileBottomSheet = ({
           >
             {isOpen ? 'Tutup' : 'Penjelasan'}
           </button>
-          {isOpen && (
+          {/* {isOpen && (
             <button
               onClick={toFull}
               className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 active:scale-[.98] dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-800"
             >
               Layar Penuh
             </button>
-          )}
+          )} */}
         </div>
 
         {isOpen && (
-          <div className="h-[calc(100%-56px)] overflow-y-auto px-4 pb-6">
+          <div className="h-[calc(100%-56px)] overflow-y-auto px-4 pb-6" data-scrollable>
             <h3 className="mb-3 text-base font-semibold text-neutral-900 dark:text-neutral-100">Penjelasan</h3>
             <ul className="space-y-3">
               {items.map((it, i) => (
@@ -184,9 +249,38 @@ const Panorama = () => {
     const el = containerRef.current
     if (!el) return
 
+    // Inject CSS to move PSV navbar to right side (scoped to this container)
+    const STYLE_ID = 'psv-right-navbar-css'
+    if (!document.getElementById(STYLE_ID)) {
+      const style = document.createElement('style')
+      style.id = STYLE_ID
+      style.textContent = `
+      .psv-right-navbar .psv-navbar{
+        position:absolute !important;
+        top:50% !important; left:auto !important; right:10px !important; bottom:auto !important;
+        transform:translateY(-50%);
+        background:transparent !important;
+        box-shadow:none !important;
+        padding:0 !important;
+        display:flex; flex-direction:column; gap:8px; align-items:stretch;
+      }
+      .psv-right-navbar .psv-navbar > *{ display:flex; flex-direction:column; gap:8px; }
+      .psv-right-navbar .psv-navbar .psv-button{ margin:0 !important; }
+      .psv-right-navbar .psv-navbar .psv-zoom-range{ width:140px !important; height:auto !important; transform:rotate(90deg); transform-origin:right center; }
+      /* Hide controls on desktop screens */
+      @media (min-width: 768px){
+        .psv-right-navbar .psv-navbar{ display:none !important; }
+      }
+      `
+      document.head.appendChild(style)
+    }
+
     let initialized = false
     let disposed = false
-    let currentUrl = PANORAMA_URL
+  // Prefer route museum panorama if provided
+    const idMatch = window.location.pathname.match(/\/museum\/(.+)$/)
+    const museumFromId = idMatch ? MUSEUMS.find(m => m.id === decodeURIComponent(idMatch[1])) : undefined
+    let currentUrl = museumFromId?.panorama || PANORAMA_URL
     let timeoutId: number | null = null
 
     const clearTimer = () => {
@@ -196,7 +290,7 @@ const Panorama = () => {
       }
     }
 
-    const initWithUrl = (url: string) => {
+  const initWithUrl = (url: string) => {
       if (disposed) return
       currentUrl = url
       try {
@@ -204,7 +298,7 @@ const Panorama = () => {
           container: el,
           panorama: url,
           touchmoveTwoFingers: true,
-          navbar: ['zoom', 'move', 'fullscreen'],
+      navbar: ['zoom', 'fullscreen'],
           defaultYaw: 0,
           defaultPitch: 0,
         })
@@ -259,7 +353,7 @@ const Panorama = () => {
 
       // Preload and fallback if needed; preloading may still succeed but WebGL texture can fail due to CORS
       try {
-        const goodUrl = await ensureImage(PANORAMA_URL)
+        const goodUrl = await ensureImage(currentUrl)
         initWithUrl(goodUrl)
       } catch (e) {
         try {
@@ -287,7 +381,7 @@ const Panorama = () => {
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
+  <div ref={containerRef} className="h-full w-full psv-right-navbar" />
       {!ready && !error && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-neutral-500">
           Memuat foto 360°...
@@ -308,33 +402,51 @@ const Panorama = () => {
 }
 
 const MuseumIndex = () => {
-  const items: ExplanationItem[] = [
-    {
-      title: 'Gerbang Utama',
-      description: 'Area pintu masuk museum dengan arsitektur kolonial yang khas. Geser untuk melihat detail ornamen.',
-      image: 'https://placehold.co/128x128/png?text=1',
-    },
-    {
-      title: 'Ruang Pamer A',
-      description: 'Koleksi artefak abad ke-19. Perhatikan label informasi di dinding sebelah barat.',
-      image: 'https://placehold.co/128x128/png?text=2',
-    },
-    {
-      title: 'Patio Tengah',
-      description: 'Halaman terbuka sebagai titik istirahat. Tersedia bangku dan pencahayaan alami.',
-      image: 'https://placehold.co/128x128/png?text=3',
-    },
-  ]
+  const { id } = useParams()
+  const museum = MUSEUMS.find(m => m.id === id)
+  const items: ExplanationItem[] = museum?.explanations || []
+
+  // Lock document scroll while this page is mounted
+  useLayoutEffect(() => {
+    const html = document.documentElement
+    const body = document.body
+    const prevHtmlOverflow = html.style.overflow
+    const prevHtmlHeight = html.style.height
+    const prevBodyOverflow = body.style.overflow
+    const prevBodyHeight = body.style.height
+    html.style.overflow = 'hidden'
+    html.style.height = '100%'
+    body.style.overflow = 'hidden'
+    body.style.height = '100%'
+    return () => {
+      html.style.overflow = prevHtmlOverflow
+      html.style.height = prevHtmlHeight
+      body.style.overflow = prevBodyOverflow
+      body.style.height = prevBodyHeight
+    }
+  }, [])
 
   return (
-    <div className="h-[100dvh] w-full md:grid md:grid-cols-5">
+    <div className="fixed inset-0 w-full overflow-hidden md:grid md:grid-cols-5">
+      {/* Header overlay */}
+      <div className="absolute inset-x-0 top-0 z-[70] pointer-events-none">
+        <div className="pointer-events-auto">
+          <Header
+            active={0}
+            onJump={() => {}}
+            sections={[] as any}
+            brand={museum?.name || 'Museum'}
+            backHref="/museums"
+          />
+        </div>
+      </div>
       {/* Viewer 60% on desktop */}
-      <div className="h-[100dvh] md:col-span-3">
+      <div className="h-full md:col-span-3">
         <Panorama />
       </div>
 
       {/* Sidebar explanations on desktop (40%) */}
-      <aside className="hidden h-[100dvh] overflow-y-auto border-l border-neutral-200/60 dark:border-neutral-800/60 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200 p-6 md:col-span-2 md:block">
+      <aside className="hidden h-full z-[99] overflow-y-auto border-l border-neutral-200/60 dark:border-neutral-800/60 bg-white dark:bg-neutral-900 text-neutral-700 dark:text-neutral-200 p-6 md:col-span-2 md:block">
         <h2 className="mb-4 text-xl font-semibold text-neutral-900 dark:text-neutral-100">Penjelasan</h2>
         <ul className="space-y-4">
           {items.map((it, i) => (
