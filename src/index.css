@@ -10,7 +10,7 @@
 html, body, #root {
   height: 100%;
   overscroll-behavior-y: none;
-  font-family: 'Freeman', system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: Roboto, 'Freeman', system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-feature-settings: "liga" 1, "kern" 1;
   -webkit-font-smoothing: antialiased;
 }

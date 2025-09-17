@@ -280,7 +280,7 @@ export default function App() {
         <div className="relative z-10 flex flex-col items-center gap-8 px-6">
           <div className="flex items-center gap-4">
             <Logo />
-            <span className="font-semibold tracking-wide text-lg">J-ViMs</span>
+            <span className="font-semibold tracking-wide text-lg">Education</span>
           </div>
           <div className="w-64 h-2 bg-white/10 rounded-full overflow-hidden">
             <div className="h-full bg-white transition-[width] duration-300 ease-out" style={{ width: `${Math.round(progress * 100)}%` }} />

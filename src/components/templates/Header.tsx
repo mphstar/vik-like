@@ -13,7 +13,7 @@ interface HeaderProps {
 }
 
 export function Header({active,onJump,sections,brand,backHref,actions}:HeaderProps){
-  const label = brand || 'J-ViMs';
+  const label = brand || 'Education';
   return (
   <div className="sticky top-0 z-[60] px-3 md:px-8 py-3 backdrop-blur-md bg-black/35 supports-[backdrop-filter]:bg-black/20 border-b border-white/10">
       {/* Mobile layout */}

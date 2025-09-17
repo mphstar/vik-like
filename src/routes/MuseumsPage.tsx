@@ -46,7 +46,7 @@ export function MuseumsPage(){
 
   return (
     <div ref={containerRef} className="h-screen w-screen overflow-y-scroll snap-y snap-mandatory scrollbar-none relative bg-black">
-  <Header active={active} onJump={scrollToIndex} sections={sections} brand="MuseoFlow" />
+  <Header active={active} onJump={scrollToIndex} sections={sections} />
       <div className="absolute top-3 right-4 z-[70] text-xs text-white/70"><Link to="/" className="hover:text-white transition underline/30">Home</Link></div>
       <NavDots count={sections.length} active={active} onJump={scrollToIndex} />
       {sections.map((s,i)=>(<Section key={s.id} ref={el=>{sectionRefs.current[i]=el;}} data={s} index={i} />))}
