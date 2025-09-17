@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@photo-sphere-viewer/core": "^5.14.0",
+    "@photo-sphere-viewer/markers-plugin": "^5.14.0",
     "@tailwindcss/vite": "^4.1.12",
     "framer-motion": "^12.23.12",
-    "photo-sphere-viewer": "^4.8.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.0.2",
@@ -22,7 +22,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
-    "@photo-sphere-viewer/markers-plugin": "^5.8.6",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.9",
     "@types/react-router-dom": "^5.3.3",
